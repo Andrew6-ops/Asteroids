@@ -54,7 +54,7 @@
             justify-content: center;
             align-items: center;
             height: 100vh;
-            touch-action: none; /* Prevent default touch behaviors */
+            touch-action: none;
         }
         canvas {
             border: 1px solid #333;
@@ -69,7 +69,7 @@
             top: 10px;
             left: 10px;
             color: #00FFFF;
-            font-size: clamp(16px, 4vw, 18px);
+            font-size: clamp(12px, 3vw, 14px);
             text-shadow: 0 0 5px #00FFFF;
         }
         #gameOver {
@@ -78,13 +78,13 @@
             left: 50%;
             transform: translate(-50%, -50%);
             color: #FF00FF;
-            font-size: clamp(24px, 6vw, 32px);
+            font-size: clamp(20px, 5vw, 28px);
             text-align: center;
             display: none;
             text-shadow: 0 0 10px #FF00FF;
         }
         #gameOver div {
-            font-size: clamp(14px, 3vw, 16px);
+            font-size: clamp(12px, 2.5vw, 14px);
             margin-top: 15px;
         }
         #controls {
@@ -94,6 +94,9 @@
             display: flex;
             justify-content: space-between;
             padding: 0 10px;
+            padding-bottom: env(safe-area-inset-bottom, 10px);
+            padding-left: env(safe-area-inset-left, 10px);
+            padding-right: env(safe-area-inset-right, 10px);
             box-sizing: border-box;
         }
         .control-btn {
@@ -101,10 +104,10 @@
             border: 2px solid #00FFFF;
             border-radius: 10px;
             color: #00FFFF;
-            font-size: clamp(14px, 4vw, 16px);
+            font-size: clamp(12px, 3vw, 14px);
             padding: 10px;
-            width: 80px;
-            height: 80px;
+            width: 60px;
+            height: 60px;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -118,18 +121,18 @@
         }
         @media (max-width: 600px) {
             #ui {
-                font-size: clamp(12px, 3vw, 14px);
+                font-size: clamp(10px, 2.5vw, 12px);
             }
             #gameOver {
-                font-size: clamp(20px, 5vw, 28px);
+                font-size: clamp(18px, 4.5vw, 24px);
             }
             #gameOver div {
-                font-size: clamp(12px, 2.5vw, 14px);
+                font-size: clamp(10px, 2vw, 12px);
             }
             .control-btn {
-                width: 60px;
-                height: 60px;
-                font-size: clamp(12px, 3vw, 14px);
+                width: 50px;
+                height: 50px;
+                font-size: clamp(10px, 2.5vw, 12px);
             }
         }
     </style>
@@ -155,36 +158,48 @@
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
+        const NUM_STARS = 80;
 
-        // Dynamic canvas sizing
+        // Dynamic canvas sizing with preference for taller canvas
+        let resizeTimeout;
         function resizeCanvas() {
-            const dpr = window.devicePixelRatio || 1;
-            const aspectRatio = 4 / 3;
-            let width = window.innerWidth;
-            let height = window.innerHeight;
-
-            if (width / height > aspectRatio) {
-                width = height * aspectRatio;
-            } else {
-                height = width / aspectRatio;
-            }
-
-            canvas.width = width * dpr;
-            canvas.height = height * dpr;
-            canvas.style.width = `${width}px`;
-            canvas.style.height = `${height}px`;
-            ctx.scale(dpr, dpr);
+            clearTimeout(resizeTimeout);
+            resizeTimeout = setTimeout(() => {
+                const dpr = window.devicePixelRatio || 1;
+                const aspectRatio = 4 / 3;
+                let width = window.innerWidth;
+                let height = window.innerHeight * 0.9; // Use 90% of height to account for safe areas
+                // Prioritize height to "lengthen" canvas for better visibility
+                if (width / height < aspectRatio) {
+                    width = height * aspectRatio;
+                } else {
+                    height = width / aspectRatio;
+                }
+                canvas.width = width * dpr;
+                canvas.height = height * dpr;
+                canvas.style.width = `${width}px`;
+                canvas.style.height = `${height}px`;
+                ctx.scale(dpr, dpr);
+                // Ensure ship starts centered
+                ship.x = canvas.width / (2 * dpr);
+                ship.y = canvas.height / (2 * dpr);
+            }, 100);
         }
 
         window.addEventListener('resize', resizeCanvas);
         resizeCanvas();
 
-        // Audio Context for sound effects
+        // Audio Context initialization
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        document.addEventListener('touchstart', () => {
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().then(() => console.log('AudioContext resumed'));
+            }
+        }, { once: true });
+
         let thrustOscillator = null;
         let thrustGain = null;
 
-        // Sound effect functions (unchanged)
         function playLaserSound() {
             if (audioCtx.state !== 'running') return;
             const oscillator = audioCtx.createOscillator();
@@ -383,8 +398,8 @@
         };
 
         const ship = {
-            x: canvas.width / 2,
-            y: canvas.height / 2,
+            x: 0, // Will be set by resizeCanvas
+            y: 0, // Will be set by resizeCanvas
             vx: 0,
             vy: 0,
             angle: -Math.PI / 2,
@@ -400,7 +415,8 @@
             right: false,
             thrust: false,
             fire: false,
-            hyper: false
+            hyper: false,
+            hyperUsed: false
         };
         const bullets = [];
         const asteroids = [];
@@ -410,13 +426,11 @@
         let saucerSpawnTimer = 0;
         const SAUCER_SPAWN_INTERVAL = 1000;
         const stars = [];
-        const NUM_STARS = 120;
         let lastRumble = 0;
         const RUMBLE_DELAY = 120;
         let lastShot = 0;
         const shotDelay = 250;
 
-        // Touch controls
         const leftBtn = document.getElementById('leftBtn');
         const rightBtn = document.getElementById('rightBtn');
         const thrustBtn = document.getElementById('thrustBtn');
@@ -436,19 +450,17 @@
             if (btnId === 'hyperBtn') touchControls.hyper = state;
         }
 
-        leftBtn.addEventListener('touchstart', (e) => handleTouch(e, true));
-        rightBtn.addEventListener('touchstart', (e) => handleTouch(e, true));
-        thrustBtn.addEventListener('touchstart', (e) => handleTouch(e, true));
-        fireBtn.addEventListener('touchstart', (e) => handleTouch(e, true));
-        hyperBtn.addEventListener('touchstart', (e) => handleTouch(e, true));
+        leftBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
+        rightBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
+        thrustBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
+        fireBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
+        hyperBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
+        leftBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
+        rightBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
+        thrustBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
+        fireBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
+        hyperBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
 
-        leftBtn.addEventListener('touchend', (e) => handleTouch(e, false));
-        rightBtn.addEventListener('touchend', (e) => handleTouch(e, false));
-        thrustBtn.addEventListener('touchend', (e) => handleTouch(e, false));
-        fireBtn.addEventListener('touchend', (e) => handleTouch(e, false));
-        hyperBtn.addEventListener('touchend', (e) => handleTouch(e, false));
-
-        // Keyboard controls
         window.addEventListener('keydown', e => {
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
@@ -460,24 +472,25 @@
             keys[e.key] = false;
         });
 
-        // Game over tap to restart
-        document.getElementById('gameOver').addEventListener('touchstart', () => {
+        const gameOverScreen = document.getElementById('gameOver');
+        function restartGame() {
             if (game.gameOver) {
                 game.gameOver = false;
                 game.score = 0;
                 game.lives = 3;
                 game.level = 1;
-                ship.x = canvas.width / 2;
-                ship.y = canvas.height / 2;
+                ship.x = canvas.width / (2 * (window.devicePixelRatio || 1));
+                ship.y = canvas.height / (2 * (window.devicePixelRatio || 1));
                 ship.vx = 0;
                 ship.vy = 0;
                 ship.angle = -Math.PI / 2;
                 initLevel();
                 document.getElementById('gameOver').style.display = 'none';
             }
-        });
+        }
+        gameOverScreen.addEventListener('touchstart', restartGame, { passive: false });
+        gameOverScreen.addEventListener('click', restartGame);
 
-        // Initialize starfield
         function initStars() {
             stars.length = 0;
             for (let i = 0; i < NUM_STARS; i++) {
@@ -492,7 +505,6 @@
             }
         }
 
-        // Create asteroid
         function createAsteroid(x, y, size) {
             const points = 8 + Math.floor(Math.random() * 4);
             const vertices = [];
@@ -516,7 +528,6 @@
             };
         }
 
-        // Spawn saucer
         function spawnSaucer() {
             if (saucers.length > 0) return;
             const side = Math.floor(Math.random() * 4);
@@ -556,7 +567,6 @@
             });
         }
 
-        // Initialize level
         function initLevel() {
             asteroids.length = 0;
             bullets.length = 0;
@@ -574,7 +584,6 @@
             }
         }
 
-        // Create particles
         function createParticles(x, y, count) {
             for (let i = 0; i < count; i++) {
                 particles.push({
@@ -587,7 +596,6 @@
             }
         }
 
-        // Draw ship
         function drawShip() {
             if (game.invulnerable > 0 && Math.floor(game.invulnerable / 5) % 2 === 0) {
                 return;
@@ -618,7 +626,6 @@
             ctx.restore();
         }
 
-        // Draw saucer
         function drawSaucer(saucer) {
             ctx.save();
             ctx.translate(saucer.x, saucer.y);
@@ -639,7 +646,6 @@
             ctx.restore();
         }
 
-        // Draw asteroid
         function drawAsteroid(asteroid) {
             ctx.save();
             ctx.translate(asteroid.x, asteroid.y);
@@ -657,7 +663,6 @@
             ctx.restore();
         }
 
-        // Draw player bullet
         function drawBullet(bullet) {
             ctx.fillStyle = '#00FFFF';
             ctx.shadowColor = '#00FFFF';
@@ -665,7 +670,6 @@
             ctx.fillRect(bullet.x - 1, bullet.y - 1, 3, 3);
         }
 
-        // Draw enemy bullet
         function drawEnemyBullet(bullet) {
             ctx.fillStyle = '#FF0000';
             ctx.shadowColor = '#FF0000';
@@ -673,14 +677,12 @@
             ctx.fillRect(bullet.x - 1, bullet.y - 1, 3, 3);
         }
 
-        // Draw particle
         function drawParticle(particle) {
             ctx.fillStyle = `rgba(255, 255, 255, ${particle.life / 30})`;
             ctx.shadowBlur = 0;
             ctx.fillRect(particle.x - 1, particle.y - 1, 2, 2);
         }
 
-        // Draw starfield
         function drawStars() {
             ctx.shadowBlur = 0;
             for (let star of stars) {
@@ -689,7 +691,6 @@
             }
         }
 
-        // Wrap around screen
         function wrap(obj) {
             if (obj.x < 0) obj.x = canvas.width;
             if (obj.x > canvas.width) obj.x = 0;
@@ -697,12 +698,10 @@
             if (obj.y > canvas.height) obj.y = 0;
         }
 
-        // Check collision
         function checkCollision(x1, y1, r1, x2, y2, r2) {
             return Math.hypot(x1 - x2, y1 - y2) < r1 + r2;
         }
 
-        // Handle player death
         function handlePlayerDeath() {
             playShipExplosionSound();
             createParticles(ship.x, ship.y, 20);
@@ -712,8 +711,8 @@
                 document.getElementById('gameOver').style.display = 'block';
                 stopThrustSound();
             } else {
-                ship.x = canvas.width / 2;
-                ship.y = canvas.height / 2;
+                ship.x = canvas.width / (2 * (window.devicePixelRatio || 1));
+                ship.y = canvas.height / (2 * (window.devicePixelRatio || 1));
                 ship.vx = 0;
                 ship.vy = 0;
                 ship.angle = -Math.PI / 2;
@@ -723,7 +722,6 @@
             }
         }
 
-        // Update starfield
         function updateStars() {
             for (let star of stars) {
                 star.y += star.speed;
@@ -734,22 +732,8 @@
             }
         }
 
-        // Update game
         function update() {
             if (game.gameOver) {
-                if (keys[' ']) {
-                    game.gameOver = false;
-                    game.score = 0;
-                    game.lives = 3;
-                    game.level = 1;
-                    ship.x = canvas.width / 2;
-                    ship.y = canvas.height / 2;
-                    ship.vx = 0;
-                    ship.vy = 0;
-                    ship.angle = -Math.PI / 2;
-                    initLevel();
-                    document.getElementById('gameOver').style.display = 'none';
-                }
                 if (thrustOscillator) stopThrustSound();
                 lastRumble = 0;
                 return;
@@ -757,7 +741,6 @@
 
             updateStars();
 
-            // Ship controls (keyboard or touch)
             if (keys['ArrowLeft'] || touchControls.left) {
                 ship.angle -= 0.08;
             }
@@ -959,7 +942,6 @@
             document.getElementById('lives').textContent = game.lives;
         }
 
-        // Render game
         function render() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             drawStars();
@@ -971,15 +953,15 @@
             particles.forEach(drawParticle);
         }
 
-        // Game loop
         function gameLoop() {
             update();
             render();
             requestAnimationFrame(gameLoop);
         }
 
-        // Start game
         initStars();
         initLevel();
         gameLoop();
     </script>
+</body>
+</html>
