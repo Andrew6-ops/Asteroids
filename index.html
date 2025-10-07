@@ -1,48 +1,9 @@
-<script type="text/javascript">
-        var gk_isXlsx = false;
-        var gk_xlsxFileLookup = {};
-        var gk_fileData = {};
-        function filledCell(cell) {
-          return cell !== '' && cell != null;
-        }
-        function loadFileData(filename) {
-        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
-            try {
-                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
-                var firstSheetName = workbook.SheetNames[0];
-                var worksheet = workbook.Sheets[firstSheetName];
-
-                // Convert sheet to JSON to filter blank rows
-                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
-                // Filter out blank rows (rows where all cells are empty, null, or undefined)
-                var filteredData = jsonData.filter(row => row.some(filledCell));
-
-                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
-                var headerRowIndex = filteredData.findIndex((row, index) =>
-                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
-                );
-                // Fallback
-                if (headerRowIndex === -1 || headerRowIndex > 25) {
-                  headerRowIndex = 0;
-                }
-
-                // Convert filtered JSON back to CSV
-                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
-                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
-                return csv;
-            } catch (e) {
-                console.error(e);
-                return "";
-            }
-        }
-        return gk_fileData[filename] || "";
-        }
-        </script><!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Asteroids</title>
+    <title>Asteroids Mobile</title>
     <style>
         body {
             margin: 0;
@@ -51,165 +12,204 @@
             overflow: hidden;
             font-family: 'Courier New', monospace;
             display: flex;
-            justify-content: center;
+            flex-direction: column; /* Stack controls below canvas */
+            justify-content: flex-start; /* Push canvas to the top */
             align-items: center;
             height: 100vh;
-            touch-action: none;
+            /* Prevents iOS from delaying tap events (though modern iOS handles this better) */
+            touch-action: manipulation; 
         }
+
+        #gameContainer {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            /* Container to hold canvas and controls together */
+            width: 100vw;
+            height: 100vh;
+            max-width: 800px; /* Optional: Keep desktop constraint */
+        }
+
         canvas {
+            /* 2. CANVAS: Make canvas responsive but keep aspect ratio. */
+            width: 100%;
+            max-height: 60vh; /* Allow controls space below */
+            aspect-ratio: 4/3; /* 800x600 ratio */
             border: 1px solid #333;
             background: #000;
-            max-width: 100%;
-            max-height: 100%;
-            width: auto;
-            height: auto;
+            box-sizing: border-box;
         }
+
         #ui {
             position: absolute;
-            top: 10px;
-            left: 10px;
+            top: 20px;
+            left: 20px;
             color: #00FFFF;
-            font-size: clamp(12px, 3vw, 14px);
+            font-size: 16px; /* Reduced for mobile */
             text-shadow: 0 0 5px #00FFFF;
+            /* Hide desktop controls hint */
+            display: none; 
         }
+        
         #gameOver {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             color: #FF00FF;
-            font-size: clamp(20px, 5vw, 28px);
+            font-size: 36px;
             text-align: center;
             display: none;
             text-shadow: 0 0 10px #FF00FF;
         }
         #gameOver div {
-            font-size: clamp(12px, 2.5vw, 14px);
-            margin-top: 15px;
+            font-size: 18px;
+            margin-top: 20px;
         }
-        #controls {
-            position: absolute;
-            bottom: 10px;
+
+        /* 3. MOBILE CONTROLS STYLES */
+        #mobileControls {
+            position: fixed;
+            bottom: 0;
+            left: 0;
             width: 100%;
-            display: flex;
-            justify-content: space-between;
-            padding: 0 10px;
-            padding-bottom: env(safe-area-inset-bottom, 10px);
-            padding-left: env(safe-area-inset-left, 10px);
-            padding-right: env(safe-area-inset-right, 10px);
-            box-sizing: border-box;
-        }
-        .control-btn {
-            background: rgba(0, 255, 255, 0.2);
-            border: 2px solid #00FFFF;
-            border-radius: 10px;
-            color: #00FFFF;
-            font-size: clamp(12px, 3vw, 14px);
+            height: 40vh; /* Give controls significant space */
+            display: grid;
+            grid-template-areas: 
+                "rotL thrust rotR"
+                "fire fire jump";
+            grid-template-columns: 1fr 1fr 1fr;
+            grid-template-rows: 2fr 1fr;
             padding: 10px;
-            width: 60px;
-            height: 60px;
+            box-sizing: border-box;
+            background-color: rgba(0, 0, 0, 0.5);
+            max-width: 800px; /* Match max-width of game container */
+        }
+
+        .control-btn {
             display: flex;
-            align-items: center;
             justify-content: center;
-            text-align: center;
-            cursor: pointer;
+            align-items: center;
+            margin: 5px;
+            border-radius: 50%;
+            color: #fff;
+            font-size: 18px;
+            font-weight: bold;
             user-select: none;
-            touch-action: manipulation;
+            -webkit-user-select: none; /* iOS Safari */
+            cursor: pointer;
+            box-shadow: 0 0 8px #00FFFF;
+            border: 3px solid #00FFFF;
         }
-        .control-btn:active {
-            background: rgba(0, 255, 255, 0.5);
+
+        #rotLeft { grid-area: rotL; }
+        #rotRight { grid-area: rotR; }
+        #thrust { 
+            grid-area: thrust; 
+            border-color: #FF00FF; 
+            box-shadow: 0 0 8px #FF00FF;
+            margin: 5px 20px; /* make thrust button stand out */
         }
-        @media (max-width: 600px) {
-            #ui {
-                font-size: clamp(10px, 2.5vw, 12px);
-            }
-            #gameOver {
-                font-size: clamp(18px, 4.5vw, 24px);
-            }
-            #gameOver div {
-                font-size: clamp(10px, 2vw, 12px);
-            }
-            .control-btn {
-                width: 50px;
-                height: 50px;
-                font-size: clamp(10px, 2.5vw, 12px);
-            }
+        #fire { 
+            grid-area: fire; 
+            border-radius: 10px; 
+            border-color: #00FFFF; 
+            box-shadow: 0 0 8px #00FFFF;
+        }
+        #jump { 
+            grid-area: jump; 
+            border-color: #FF00FF; 
+            box-shadow: 0 0 8px #FF00FF;
+            border-radius: 10px;
+        }
+
+        /* Active/Pressed State */
+        .control-btn.active {
+            opacity: 0.7;
+            transform: scale(0.95);
         }
     </style>
 </head>
 <body>
-    <canvas id="canvas"></canvas>
+    <div id="gameContainer">
+        <canvas id="canvas"></canvas>
+    </div>
     <div id="ui">
         <div>SCORE: <span id="score">0</span></div>
         <div>LIVES: <span id="lives">3</span></div>
+        <div style="font-size: 14px; margin-top: 10px; display: none;">
+            ROTATE: ← →<br>
+            THRUST: ↑<br>
+            FIRE: SPACE<br>
+            HYPERSPACE: ↓
+        </div>
     </div>
     <div id="gameOver">
         <div>GAME OVER</div>
         <div>Tap to restart</div>
     </div>
-    <div id="controls">
-        <div class="control-btn" id="leftBtn">Left</div>
-        <div class="control-btn" id="rightBtn">Right</div>
-        <div class="control-btn" id="thrustBtn">Thrust</div>
-        <div class="control-btn" id="fireBtn">Fire</div>
-        <div class="control-btn" id="hyperBtn">Hyper</div>
+
+    <div id="mobileControls">
+        <div class="control-btn" id="rotLeft">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00FFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            Rotate
+        </div>
+        <div class="control-btn" id="thrust">THRUST</div>
+        <div class="control-btn" id="rotRight">
+            Rotate
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#00FFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </div>
+        <div class="control-btn" id="fire">FIRE</div>
+        <div class="control-btn" id="jump">JUMP</div>
     </div>
 
     <script>
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
-        const NUM_STARS = 80;
+        // Set fixed canvas dimensions for the game logic, CSS scales it for mobile
+        canvas.width = 800; 
+        canvas.height = 600;
 
-        // Dynamic canvas sizing with preference for taller canvas
-        let resizeTimeout;
-        function resizeCanvas() {
-            clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                const dpr = window.devicePixelRatio || 1;
-                const aspectRatio = 4 / 3;
-                let width = window.innerWidth;
-                let height = window.innerHeight * 0.9; // Use 90% of height to account for safe areas
-                // Prioritize height to "lengthen" canvas for better visibility
-                if (width / height < aspectRatio) {
-                    width = height * aspectRatio;
-                } else {
-                    height = width / aspectRatio;
-                }
-                canvas.width = width * dpr;
-                canvas.height = height * dpr;
-                canvas.style.width = `${width}px`;
-                canvas.style.height = `${height}px`;
-                ctx.scale(dpr, dpr);
-                // Ensure ship starts centered
-                ship.x = canvas.width / (2 * dpr);
-                ship.y = canvas.height / (2 * dpr);
-            }, 100);
-        }
+        // Get mobile controls
+        const rotLeftBtn = document.getElementById('rotLeft');
+        const rotRightBtn = document.getElementById('rotRight');
+        const thrustBtn = document.getElementById('thrust');
+        const fireBtn = document.getElementById('fire');
+        const jumpBtn = document.getElementById('jump');
 
-        window.addEventListener('resize', resizeCanvas);
-        resizeCanvas();
-
-        // Audio Context initialization
+        // Audio Context for sound effects
         const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        document.addEventListener('touchstart', () => {
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume().then(() => console.log('AudioContext resumed'));
-            }
-        }, { once: true });
-
         let thrustOscillator = null;
         let thrustGain = null;
 
+        // --- Sound effect functions (omitted for brevity, assume they are pasted here) ---
+        // (The sound functions are long, but they are crucial for a good experience. 
+        //  Make sure to paste them back in the final code)
+        function playLaserSound() { /* ... */ }
+        function playEnemyLaserSound() { /* ... */ }
+        function playExplosionSound(size) { /* ... */ }
+        function startThrustSound() { /* ... */ }
+        function stopThrustSound() { /* ... */ }
+        function playHyperspaceSound() { /* ... */ }
+        function playShipExplosionSound() { /* ... */ }
+        function playRumbleSound() { /* ... */ }
+        
+        // PASTE ALL ORIGINAL SOUND FUNCTIONS HERE (approx lines 46-218 of original code)
+        // ... (BEGIN PASTE OF ORIGINAL SOUND FUNCTIONS) ...
         function playLaserSound() {
             if (audioCtx.state !== 'running') return;
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
+            
             oscillator.connect(gainNode);
             gainNode.connect(audioCtx.destination);
+            
             oscillator.frequency.setValueAtTime(800, audioCtx.currentTime);
             oscillator.frequency.exponentialRampToValueAtTime(100, audioCtx.currentTime + 0.1);
+            
             gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+            
             oscillator.start(audioCtx.currentTime);
             oscillator.stop(audioCtx.currentTime + 0.1);
         }
@@ -218,13 +218,17 @@
             if (audioCtx.state !== 'running') return;
             const oscillator = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
+            
             oscillator.connect(gainNode);
             gainNode.connect(audioCtx.destination);
+            
             oscillator.type = 'square';
             oscillator.frequency.setValueAtTime(500, audioCtx.currentTime);
             oscillator.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.15);
+            
             gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            
             oscillator.start(audioCtx.currentTime);
             oscillator.stop(audioCtx.currentTime + 0.15);
         }
@@ -233,6 +237,7 @@
             if (audioCtx.state !== 'running') return;
             const duration = size === 50 ? 0.3 : size === 25 ? 0.2 : 0.15;
             const baseFreq = size === 50 ? 80 : size === 25 ? 120 : 180;
+            
             const bufferSize = audioCtx.sampleRate * duration;
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const data = buffer.getChannelData(0);
@@ -251,6 +256,7 @@
             noise.connect(noiseFilter);
             noiseFilter.connect(noiseGain);
             noiseGain.connect(audioCtx.destination);
+            
             const bass = audioCtx.createOscillator();
             const bassGain = audioCtx.createGain();
             bass.type = 'sine';
@@ -260,6 +266,7 @@
             bassGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
             bass.connect(bassGain);
             bassGain.connect(audioCtx.destination);
+            
             noise.start(audioCtx.currentTime);
             bass.start(audioCtx.currentTime);
             noise.stop(audioCtx.currentTime + duration);
@@ -269,19 +276,25 @@
         function startThrustSound() {
             if (audioCtx.state !== 'running') return;
             if (thrustOscillator) return;
+            
             thrustOscillator = audioCtx.createOscillator();
             thrustGain = audioCtx.createGain();
             const filter = audioCtx.createBiquadFilter();
+            
             thrustOscillator.type = 'sawtooth';
             thrustOscillator.frequency.setValueAtTime(60, audioCtx.currentTime);
             filter.type = 'lowpass';
             filter.frequency.setValueAtTime(300, audioCtx.currentTime);
+            
             thrustGain.gain.setValueAtTime(0, audioCtx.currentTime);
             thrustGain.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.05);
+            
             thrustOscillator.connect(filter);
             filter.connect(thrustGain);
             thrustGain.connect(audioCtx.destination);
+            
             thrustOscillator.start();
+            
             const lfo = audioCtx.createOscillator();
             const lfoGain = audioCtx.createGain();
             lfo.frequency.setValueAtTime(30, audioCtx.currentTime);
@@ -289,12 +302,15 @@
             lfo.connect(lfoGain);
             lfoGain.connect(thrustOscillator.frequency);
             lfo.start();
+            
             thrustOscillator.lfo = lfo;
         }
 
         function stopThrustSound() {
             if (!thrustOscillator) return;
+            
             thrustGain.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.05);
+            
             setTimeout(() => {
                 if (thrustOscillator) {
                     if (thrustOscillator.lfo) thrustOscillator.lfo.stop();
@@ -308,24 +324,31 @@
         function playHyperspaceSound() {
             if (audioCtx.state !== 'running') return;
             const duration = 0.5;
+            
             const osc1 = audioCtx.createOscillator();
             const osc2 = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
+            
             osc1.type = 'sine';
             osc2.type = 'sine';
+            
             osc1.frequency.setValueAtTime(1000, audioCtx.currentTime);
             osc1.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + duration);
             osc2.frequency.setValueAtTime(1200, audioCtx.currentTime);
             osc2.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + duration);
+            
             gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
             gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            
             osc1.connect(gainNode);
             osc2.connect(gainNode);
             gainNode.connect(audioCtx.destination);
+            
             osc1.start(audioCtx.currentTime);
             osc2.start(audioCtx.currentTime);
             osc1.stop(audioCtx.currentTime + duration);
             osc2.stop(audioCtx.currentTime + duration);
+            
             const warble = audioCtx.createOscillator();
             const warbleGain = audioCtx.createGain();
             warble.frequency.setValueAtTime(8, audioCtx.currentTime);
@@ -333,6 +356,7 @@
             warble.connect(warbleGain);
             warbleGain.connect(osc1.frequency);
             warbleGain.connect(osc2.frequency);
+            
             warble.start(audioCtx.currentTime);
             warble.stop(audioCtx.currentTime + duration);
         }
@@ -340,33 +364,43 @@
         function playShipExplosionSound() {
             if (audioCtx.state !== 'running') return;
             const duration = 0.5;
+            
             const bufferSize = audioCtx.sampleRate * duration;
             const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
             const data = buffer.getChannelData(0);
             for (let i = 0; i < bufferSize; i++) {
                 data[i] = Math.random() * 2 - 1;
             }
+            
             const noise = audioCtx.createBufferSource();
             noise.buffer = buffer;
+            
             const noiseFilter = audioCtx.createBiquadFilter();
             noiseFilter.type = 'lowpass';
             noiseFilter.frequency.setValueAtTime(500, audioCtx.currentTime);
             noiseFilter.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + duration);
+            
             const noiseGain = audioCtx.createGain();
             noiseGain.gain.setValueAtTime(0.5, audioCtx.currentTime);
             noiseGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            
             noise.connect(noiseFilter);
             noiseFilter.connect(noiseGain);
             noiseGain.connect(audioCtx.destination);
+            
             const bass = audioCtx.createOscillator();
             const bassGain = audioCtx.createGain();
+            
             bass.type = 'sine';
             bass.frequency.setValueAtTime(80, audioCtx.currentTime);
             bass.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + duration);
+            
             bassGain.gain.setValueAtTime(0.7, audioCtx.currentTime);
             bassGain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+            
             bass.connect(bassGain);
             bassGain.connect(audioCtx.destination);
+            
             noise.start(audioCtx.currentTime);
             bass.start(audioCtx.currentTime);
             noise.stop(audioCtx.currentTime + duration);
@@ -376,18 +410,28 @@
         function playRumbleSound() {
             if (audioCtx.state !== 'running') return;
             const duration = 0.2;
+            
             const osc = audioCtx.createOscillator();
             const gainNode = audioCtx.createGain();
+            
             osc.type = 'sine';
-            osc.frequency.setValueAtTime(40, audioCtx.currentTime);
+            
+            // Low frequency sweep for rumble feel
+            osc.frequency.setValueAtTime(40, audioCtx.currentTime); 
             osc.frequency.exponentialRampToValueAtTime(20, audioCtx.currentTime + duration);
-            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime);
+            
+            // Very low gain
+            gainNode.gain.setValueAtTime(0.1, audioCtx.currentTime); 
             gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+            
             osc.connect(gainNode);
             gainNode.connect(audioCtx.destination);
+            
             osc.start(audioCtx.currentTime);
             osc.stop(audioCtx.currentTime + duration);
         }
+        // ... (END PASTE OF ORIGINAL SOUND FUNCTIONS) ...
+
 
         const game = {
             score: 0,
@@ -398,8 +442,8 @@
         };
 
         const ship = {
-            x: 0, // Will be set by resizeCanvas
-            y: 0, // Will be set by resizeCanvas
+            x: canvas.width / 2,
+            y: canvas.height / 2,
             vx: 0,
             vy: 0,
             angle: -Math.PI / 2,
@@ -409,58 +453,27 @@
             wasThrusting: false
         };
 
-        const keys = {};
-        const touchControls = {
-            left: false,
-            right: false,
-            thrust: false,
-            fire: false,
-            hyper: false,
-            hyperUsed: false
-        };
+        const keys = {}; // This object now holds both keyboard and touch state
         const bullets = [];
         const asteroids = [];
         const particles = [];
+        
+        // --- ENEMY OBJECTS ---
         const saucers = [];
         const enemyBullets = [];
         let saucerSpawnTimer = 0;
-        const SAUCER_SPAWN_INTERVAL = 1000;
+        const SAUCER_SPAWN_INTERVAL = 1000; // Frames (about 16 seconds)
+        
+        // --- STARFIELD OBJECTS ---
         const stars = [];
+        const NUM_STARS = 120;
         let lastRumble = 0;
-        const RUMBLE_DELAY = 120;
+        const RUMBLE_DELAY = 120; // Frames (about 2 seconds)
+
         let lastShot = 0;
         const shotDelay = 250;
 
-        const leftBtn = document.getElementById('leftBtn');
-        const rightBtn = document.getElementById('rightBtn');
-        const thrustBtn = document.getElementById('thrustBtn');
-        const fireBtn = document.getElementById('fireBtn');
-        const hyperBtn = document.getElementById('hyperBtn');
-
-        function handleTouch(e, state) {
-            e.preventDefault();
-            if (audioCtx.state === 'suspended') {
-                audioCtx.resume();
-            }
-            const btnId = e.target.id;
-            if (btnId === 'leftBtn') touchControls.left = state;
-            if (btnId === 'rightBtn') touchControls.right = state;
-            if (btnId === 'thrustBtn') touchControls.thrust = state;
-            if (btnId === 'fireBtn') touchControls.fire = state;
-            if (btnId === 'hyperBtn') touchControls.hyper = state;
-        }
-
-        leftBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
-        rightBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
-        thrustBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
-        fireBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
-        hyperBtn.addEventListener('touchstart', (e) => handleTouch(e, true), { passive: false });
-        leftBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
-        rightBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
-        thrustBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
-        fireBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
-        hyperBtn.addEventListener('touchend', (e) => handleTouch(e, false), { passive: false });
-
+        // --- KEYBOARD LISTENERS (kept for desktop use, but won't interfere on mobile) ---
         window.addEventListener('keydown', e => {
             if (audioCtx.state === 'suspended') {
                 audioCtx.resume();
@@ -472,42 +485,91 @@
             keys[e.key] = false;
         });
 
-        const gameOverScreen = document.getElementById('gameOver');
-        function restartGame() {
-            if (game.gameOver) {
-                game.gameOver = false;
-                game.score = 0;
-                game.lives = 3;
-                game.level = 1;
-                ship.x = canvas.width / (2 * (window.devicePixelRatio || 1));
-                ship.y = canvas.height / (2 * (window.devicePixelRatio || 1));
-                ship.vx = 0;
-                ship.vy = 0;
-                ship.angle = -Math.PI / 2;
-                initLevel();
-                document.getElementById('gameOver').style.display = 'none';
-            }
-        }
-        gameOverScreen.addEventListener('touchstart', restartGame, { passive: false });
-        gameOverScreen.addEventListener('click', restartGame);
+        // 5. TOUCH CONTROL HANDLERS
+        function setupTouchControls() {
+            const controls = [
+                { element: rotLeftBtn, key: 'ArrowLeft' },
+                { element: rotRightBtn, key: 'ArrowRight' },
+                { element: thrustBtn, key: 'ArrowUp' },
+                { element: fireBtn, key: ' ' }, // Spacebar key
+                { element: jumpBtn, key: 'ArrowDown' } // Hyperspace key
+            ];
 
+            const startEvent = (e, key) => {
+                e.preventDefault(); // Prevent scrolling/zooming
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+                keys[key] = true;
+                e.currentTarget.classList.add('active'); // Visual feedback
+                
+                // Special handling for GameOver reset on touch
+                if (game.gameOver && key === ' ') {
+                     game.gameOver = false;
+                     game.score = 0;
+                     game.lives = 3;
+                     game.level = 1;
+                     ship.x = canvas.width / 2;
+                     ship.y = canvas.height / 2;
+                     ship.vx = 0;
+                     ship.vy = 0;
+                     ship.angle = -Math.PI / 2;
+                     initLevel();
+                     document.getElementById('gameOver').style.display = 'none';
+                }
+            };
+
+            const endEvent = (e, key) => {
+                e.preventDefault();
+                keys[key] = false;
+                e.currentTarget.classList.remove('active');
+            };
+
+            controls.forEach(control => {
+                // Use 'touchstart' and 'touchend' for mobile responsiveness
+                control.element.addEventListener('touchstart', (e) => startEvent(e, control.key), { passive: false });
+                control.element.addEventListener('touchend', (e) => endEvent(e, control.key), { passive: false });
+                
+                // Add mouse events for testing on desktop
+                control.element.addEventListener('mousedown', (e) => startEvent(e, control.key));
+                control.element.addEventListener('mouseup', (e) => endEvent(e, control.key));
+                control.element.addEventListener('mouseleave', (e) => { // Safety for dragged fingers
+                    if (keys[control.key]) {
+                         endEvent(e, control.key);
+                    }
+                });
+            });
+        }
+        // Initialize touch controls as soon as the DOM is ready
+        setupTouchControls();
+
+        // --- Rest of the game logic (omitted for brevity, assume they are pasted here) ---
+        // PASTE ALL ORIGINAL GAME LOGIC FUNCTIONS/CLASSES HERE (approx lines 268-577 of original code)
+        // ... (BEGIN PASTE OF ORIGINAL GAME LOGIC) ...
+        // Create initial starfield
         function initStars() {
             stars.length = 0;
             for (let i = 0; i < NUM_STARS; i++) {
-                const z = Math.random();
+                // z simulates depth: smaller z -> slower, smaller, dimmer (further away)
+                const z = Math.random(); 
                 stars.push({
                     x: Math.random() * canvas.width,
                     y: Math.random() * canvas.height,
-                    size: z * 1.5 + 1,
-                    speed: z * 1.5 + 0.5,
-                    alpha: z * 0.4 + 0.3
+                    // Size is proportional to z (depth) - SLIGHTLY REDUCED
+                    size: z * 1.5 + 1, 
+                    // Speed is proportional to z, creating a parallax effect
+                    speed: z * 1.5 + 0.5, 
+                    // Alpha/brightness is proportional to z - SLIGHTLY REDUCED
+                    alpha: z * 0.4 + 0.3 
                 });
             }
         }
-
+        
+        // Create asteroid
         function createAsteroid(x, y, size) {
             const points = 8 + Math.floor(Math.random() * 4);
             const vertices = [];
+            
             for (let i = 0; i < points; i++) {
                 const angle = (i / points) * Math.PI * 2;
                 const radius = size * (0.7 + Math.random() * 0.3);
@@ -516,6 +578,7 @@
                     y: Math.sin(angle) * radius
                 });
             }
+
             return {
                 x: x || Math.random() * canvas.width,
                 y: y || Math.random() * canvas.height,
@@ -527,63 +590,72 @@
                 vertices: vertices
             };
         }
-
+        
+        // Spawn Saucer (Flies straight across)
         function spawnSaucer() {
             if (saucers.length > 0) return;
-            const side = Math.floor(Math.random() * 4);
+
+            const side = Math.floor(Math.random() * 4); // 0: Top, 1: Bottom, 2: Left, 3: Right
             let x, y, vx, vy;
-            const speed = 1.5 + game.level * 0.2;
-            if (side === 0) {
+            const speed = 1.5 + game.level * 0.2; // Gets slightly faster per level
+            
+            if (side === 0) { // Top edge
                 x = Math.random() * canvas.width;
                 y = -30;
                 vx = (Math.random() - 0.5) * 1;
                 vy = speed;
-            } else if (side === 1) {
+            } else if (side === 1) { // Bottom edge
                 x = Math.random() * canvas.width;
                 y = canvas.height + 30;
                 vx = (Math.random() - 0.5) * 1;
                 vy = -speed;
-            } else if (side === 2) {
+            } else if (side === 2) { // Left edge
                 x = -30;
                 y = Math.random() * canvas.height;
                 vx = speed;
                 vy = (Math.random() - 0.5) * 1;
-            } else {
+            } else { // Right edge
                 x = canvas.width + 30;
                 y = Math.random() * canvas.height;
                 vx = -speed;
                 vy = (Math.random() - 0.5) * 1;
             }
+
             saucers.push({
                 x: x,
                 y: y,
                 vx: vx,
                 vy: vy,
                 radius: 15,
-                color: '#FF00FF',
+                color: '#FF00FF', // Pink/Magenta for enemy
                 lastShot: 0,
-                shotDelay: 100 - (game.level * 5),
+                shotDelay: 100 - (game.level * 5), // Fires faster on higher levels
                 size: 15
             });
         }
 
+        // Initialize level
         function initLevel() {
             asteroids.length = 0;
             bullets.length = 0;
             saucers.length = 0;
             enemyBullets.length = 0;
             saucerSpawnTimer = 0;
+
             const numAsteroids = 3 + game.level;
+            
             for (let i = 0; i < numAsteroids; i++) {
                 let x, y;
                 do {
                     x = Math.random() * canvas.width;
                     y = Math.random() * canvas.height;
                 } while (Math.hypot(x - ship.x, y - ship.y) < 150);
+                
                 asteroids.push(createAsteroid(x, y, 50));
             }
         }
 
+        // Create particles
         function createParticles(x, y, count) {
             for (let i = 0; i < count; i++) {
                 particles.push({
@@ -596,17 +668,20 @@
             }
         }
 
+        // Draw ship
         function drawShip() {
             if (game.invulnerable > 0 && Math.floor(game.invulnerable / 5) % 2 === 0) {
                 return;
             }
+
             ctx.save();
             ctx.translate(ship.x, ship.y);
             ctx.rotate(ship.angle);
-            ctx.strokeStyle = '#00FFFF';
-            ctx.shadowColor = '#00FFFF';
+            ctx.strokeStyle = '#00FFFF'; // NEON BLUE
+            ctx.shadowColor = '#00FFFF'; // Add glow
             ctx.shadowBlur = 10;
             ctx.lineWidth = 2;
+            
             ctx.beginPath();
             ctx.moveTo(15, 0);
             ctx.lineTo(-10, -10);
@@ -614,8 +689,10 @@
             ctx.lineTo(-10, 10);
             ctx.closePath();
             ctx.stroke();
+
+            // Thrust flame
             if (ship.thrust && Math.floor(ship.thrusting / 3) % 2 === 0) {
-                ctx.strokeStyle = '#FF00FF';
+                ctx.strokeStyle = '#FF00FF'; // NEON PINK for thrusters
                 ctx.shadowColor = '#FF00FF';
                 ctx.beginPath();
                 ctx.moveTo(-7, -5);
@@ -623,9 +700,11 @@
                 ctx.lineTo(-7, 5);
                 ctx.stroke();
             }
+
             ctx.restore();
         }
 
+        // Draw saucer
         function drawSaucer(saucer) {
             ctx.save();
             ctx.translate(saucer.x, saucer.y);
@@ -633,9 +712,13 @@
             ctx.shadowColor = saucer.color;
             ctx.shadowBlur = 8;
             ctx.lineWidth = 2;
+
+            // Saucer Body (Ellipse)
             ctx.beginPath();
             ctx.ellipse(0, 0, 15, 8, 0, 0, Math.PI * 2);
             ctx.stroke();
+
+            // Cabin (Rectangle)
             ctx.beginPath();
             ctx.moveTo(-10, 0);
             ctx.lineTo(10, 0);
@@ -643,9 +726,11 @@
             ctx.lineTo(-5, 5);
             ctx.closePath();
             ctx.stroke();
+
             ctx.restore();
         }
 
+        // Draw asteroid
         function drawAsteroid(asteroid) {
             ctx.save();
             ctx.translate(asteroid.x, asteroid.y);
@@ -653,6 +738,7 @@
             ctx.strokeStyle = '#fff';
             ctx.shadowBlur = 0;
             ctx.lineWidth = 2;
+            
             ctx.beginPath();
             ctx.moveTo(asteroid.vertices[0].x, asteroid.vertices[0].y);
             for (let i = 1; i < asteroid.vertices.length; i++) {
@@ -660,37 +746,44 @@
             }
             ctx.closePath();
             ctx.stroke();
+            
             ctx.restore();
         }
 
+        // Draw player bullet
         function drawBullet(bullet) {
-            ctx.fillStyle = '#00FFFF';
+            ctx.fillStyle = '#00FFFF'; // NEON BLUE BULLET
             ctx.shadowColor = '#00FFFF';
             ctx.shadowBlur = 5;
             ctx.fillRect(bullet.x - 1, bullet.y - 1, 3, 3);
         }
-
+        
+        // Draw enemy bullet
         function drawEnemyBullet(bullet) {
-            ctx.fillStyle = '#FF0000';
+            ctx.fillStyle = '#FF0000'; // Red bullet
             ctx.shadowColor = '#FF0000';
             ctx.shadowBlur = 5;
             ctx.fillRect(bullet.x - 1, bullet.y - 1, 3, 3);
         }
 
+        // Draw particle
         function drawParticle(particle) {
+            // Particles are white
             ctx.fillStyle = `rgba(255, 255, 255, ${particle.life / 30})`;
             ctx.shadowBlur = 0;
             ctx.fillRect(particle.x - 1, particle.y - 1, 2, 2);
         }
 
+        // Draw the starfield
         function drawStars() {
-            ctx.shadowBlur = 0;
+            ctx.shadowBlur = 0; // Ensure no glow on stars
             for (let star of stars) {
                 ctx.fillStyle = `rgba(255, 255, 255, ${star.alpha})`;
                 ctx.fillRect(star.x, star.y, star.size, star.size);
             }
         }
 
+        // Wrap around screen
         function wrap(obj) {
             if (obj.x < 0) obj.x = canvas.width;
             if (obj.x > canvas.width) obj.x = 0;
@@ -698,6 +791,7 @@
             if (obj.y > canvas.height) obj.y = 0;
         }
 
+        // Check collision
         function checkCollision(x1, y1, r1, x2, y2, r2) {
             return Math.hypot(x1 - x2, y1 - y2) < r1 + r2;
         }
@@ -706,13 +800,16 @@
             playShipExplosionSound();
             createParticles(ship.x, ship.y, 20);
             game.lives--;
+
             if (game.lives <= 0) {
                 game.gameOver = true;
+                // Update text to prompt touch/tap
+                document.getElementById('gameOver').innerHTML = '<div>GAME OVER</div><div>Tap Fire/Jump to restart</div>';
                 document.getElementById('gameOver').style.display = 'block';
                 stopThrustSound();
             } else {
-                ship.x = canvas.width / (2 * (window.devicePixelRatio || 1));
-                ship.y = canvas.height / (2 * (window.devicePixelRatio || 1));
+                ship.x = canvas.width / 2;
+                ship.y = canvas.height / 2;
                 ship.vx = 0;
                 ship.vy = 0;
                 ship.angle = -Math.PI / 2;
@@ -722,36 +819,59 @@
             }
         }
 
+        // Update starfield position
         function updateStars() {
             for (let star of stars) {
-                star.y += star.speed;
+                // Move stars down to simulate forward travel (parallax scroll)
+                star.y += star.speed; 
+                
+                // Wrap stars. When a star leaves the bottom, reset it to the top.
                 if (star.y > canvas.height) {
                     star.y = 0;
-                    star.x = Math.random() * canvas.width;
+                    star.x = Math.random() * canvas.width; 
                 }
             }
         }
 
+        // Update game
         function update() {
             if (game.gameOver) {
+                // The restart logic is now primarily handled in the touch event for ' '
+                if (keys[' ']) { // Fallback for keyboard spacebar
+                    game.gameOver = false;
+                    game.score = 0;
+                    game.lives = 3;
+                    game.level = 1;
+                    ship.x = canvas.width / 2;
+                    ship.y = canvas.height / 2;
+                    ship.vx = 0;
+                    ship.vy = 0;
+                    ship.angle = -Math.PI / 2;
+                    initLevel();
+                    document.getElementById('gameOver').style.display = 'none';
+                }
+                // Stop any running sounds when game is over
                 if (thrustOscillator) stopThrustSound();
-                lastRumble = 0;
+                lastRumble = 0; 
                 return;
             }
-
+            
+            // --- Background Update ---
             updateStars();
 
-            if (keys['ArrowLeft'] || touchControls.left) {
+            // --- Ship Controls & Movement ---
+            if (keys['ArrowLeft']) {
                 ship.angle -= 0.08;
             }
-            if (keys['ArrowRight'] || touchControls.right) {
+            if (keys['ArrowRight']) {
                 ship.angle += 0.08;
             }
-            if (keys['ArrowUp'] || touchControls.thrust) {
+            if (keys['ArrowUp']) {
                 ship.thrust = true;
                 ship.thrusting++;
                 ship.vx += Math.cos(ship.angle) * 0.15;
                 ship.vy += Math.sin(ship.angle) * 0.15;
+                
                 if (!ship.wasThrusting) {
                     startThrustSound();
                     ship.wasThrusting = true;
@@ -759,12 +879,14 @@
             } else {
                 ship.thrust = false;
                 ship.thrusting = 0;
+                
                 if (ship.wasThrusting) {
                     stopThrustSound();
                     ship.wasThrusting = false;
                 }
             }
-
+            
+            /** IDLE RUMBLE LOGIC **/
             if (!ship.thrust) {
                 lastRumble++;
                 if (lastRumble > RUMBLE_DELAY) {
@@ -772,24 +894,23 @@
                     lastRumble = 0;
                 }
             } else {
-                lastRumble = 0;
+                lastRumble = 0; // Reset timer when thrusting
             }
+            /** END RUMBLE LOGIC **/
 
-            if ((keys['ArrowDown'] || touchControls.hyper) && !touchControls.hyperUsed) {
+            // Hyperspace
+            if (keys['ArrowDown']) {
                 playHyperspaceSound();
                 ship.x = Math.random() * canvas.width;
                 ship.y = Math.random() * canvas.height;
                 ship.vx = 0;
                 ship.vy = 0;
-                touchControls.hyper = false;
-                touchControls.hyperUsed = true;
+                keys['ArrowDown'] = false; // Important: Clear the key immediately for single-press
                 game.invulnerable = 60;
             }
-            if (!touchControls.hyper) {
-                touchControls.hyperUsed = false;
-            }
 
-            if ((keys[' '] || touchControls.fire) && Date.now() - lastShot > shotDelay) {
+            // Fire
+            if (keys[' '] && Date.now() - lastShot > shotDelay) {
                 playLaserSound();
                 bullets.push({
                     x: ship.x + Math.cos(ship.angle) * 15,
@@ -802,6 +923,7 @@
                 lastShot = Date.now();
             }
 
+            // Apply friction and limit speed
             ship.vx *= 0.99;
             ship.vy *= 0.99;
             const maxSpeed = 8;
@@ -816,7 +938,8 @@
             wrap(ship);
 
             if (game.invulnerable > 0) game.invulnerable--;
-
+            
+            // --- Saucer Logic ---
             saucerSpawnTimer++;
             if (saucerSpawnTimer > SAUCER_SPAWN_INTERVAL && saucers.length === 0) {
                 spawnSaucer();
@@ -827,64 +950,97 @@
                 const saucer = saucers[i];
                 saucer.x += saucer.vx;
                 saucer.y += saucer.vy;
+
+                // Remove saucer if far off screen
                 if (saucer.x < -50 || saucer.x > canvas.width + 50 || saucer.y < -50 || saucer.y > canvas.height + 50) {
                     saucers.splice(i, 1);
                     continue;
                 }
+                
+                // Saucer Firing Logic
                 saucer.lastShot++;
                 if (saucer.lastShot % Math.max(saucer.shotDelay, 10) === 0) {
                     const angle = Math.atan2(ship.y - saucer.y, ship.x - saucer.x);
-                    const spread = (Math.random() - 0.5) * 0.1;
+                    
+                    // Add slight random spread to the aiming
+                    const spread = (Math.random() - 0.5) * 0.1; 
                     const bulletSpeed = 5;
+
                     enemyBullets.push({
                         x: saucer.x,
                         y: saucer.y,
                         vx: Math.cos(angle + spread) * bulletSpeed,
                         vy: Math.sin(angle + spread) * bulletSpeed,
-                        life: 90,
+                        life: 90, 
                         radius: 2
                     });
                     playEnemyLaserSound();
                 }
             }
 
+            // --- Update Bullets, Asteroids, Particles ---
+            
+            // Update enemy bullets and check collision with player
             for (let i = enemyBullets.length - 1; i >= 0; i--) {
                 const enemyBullet = enemyBullets[i];
                 enemyBullet.x += enemyBullet.vx;
                 enemyBullet.y += enemyBullet.vy;
                 enemyBullet.life--;
-                if (enemyBullet.life <= 0 || enemyBullet.x < 0 || enemyBullet.x > canvas.width || enemyBullet.y < 0 || enemyBullet.y > canvas.height) {
+
+                // Remove if life runs out OR leaves the screen
+                if (enemyBullet.life <= 0 || 
+                    enemyBullet.x < 0 || enemyBullet.x > canvas.width || 
+                    enemyBullet.y < 0 || enemyBullet.y > canvas.height) {
+                    enemyBullets.splice(i, 1);
+                    continue;
+                }
+
+                // Enemy Bullet -> Ship Collision
+                if (game.invulnerable <= 0 && checkCollision(enemyBullet.x, enemyBullet.y, enemyBullet.radius, ship.x, ship.y, ship.radius)) {
+                    handlePlayerDeath();
                     enemyBullets.splice(i, 1);
                     continue;
                 }
             }
 
+
+            // Update player bullets and check collisions
             for (let i = bullets.length - 1; i >= 0; i--) {
                 bullets[i].x += bullets[i].vx;
                 bullets[i].y += bullets[i].vy;
                 bullets[i].life--;
                 wrap(bullets[i]);
+                
                 if (bullets[i].life <= 0) {
                     bullets.splice(i, 1);
-                    continue;
+                    continue; 
                 }
+                
                 let bulletRemoved = false;
+
+                // 1. Player Bullet -> Saucer Collision
                 for (let j = saucers.length - 1; j >= 0; j--) {
-                    if (checkCollision(bullets[i].x, bullets[i].y, bullets[i].radius, saucers[j].x, saucers[j].y, saucers[j].radius)) {
-                        playExplosionSound(50);
+                    if (checkCollision(bullets[i].x, bullets[i].y, bullets[i].radius, 
+                                        saucers[j].x, saucers[j].y, saucers[j].radius)) {
+                        playExplosionSound(50); 
                         createParticles(saucers[j].x, saucers[j].y, 15);
                         game.score += 200;
                         saucers.splice(j, 1);
                         bullets.splice(i, 1);
                         bulletRemoved = true;
-                        break;
+                        break; 
                     }
                 }
-                if (bulletRemoved) continue;
+
+                if (bulletRemoved) continue; 
+
+                // 2. Player Bullet -> Asteroid Collision
                 for (let j = asteroids.length - 1; j >= 0; j--) {
-                    if (checkCollision(bullets[i].x, bullets[i].y, bullets[i].radius, asteroids[j].x, asteroids[j].y, asteroids[j].size)) {
+                    if (checkCollision(bullets[i].x, bullets[i].y, bullets[i].radius, 
+                                        asteroids[j].x, asteroids[j].y, asteroids[j].size)) {
                         playExplosionSound(asteroids[j].size);
                         createParticles(asteroids[j].x, asteroids[j].y, 8);
+                        
                         if (asteroids[j].size === 50) {
                             game.score += 20;
                             asteroids.push(createAsteroid(asteroids[j].x, asteroids[j].y, 25));
@@ -893,75 +1049,110 @@
                             game.score += 50;
                             asteroids.push(createAsteroid(asteroids[j].x, asteroids[j].y, 12));
                             asteroids.push(createAsteroid(asteroids[j].x, asteroids[j].y, 12));
-                        } else {
+                        } else if (asteroids[j].size === 12) {
                             game.score += 100;
                         }
+
                         asteroids.splice(j, 1);
                         bullets.splice(i, 1);
+                        bulletRemoved = true;
                         break;
                     }
                 }
             }
 
+            // Update asteroids and check collision with ship
             for (let i = asteroids.length - 1; i >= 0; i--) {
-                asteroids[i].x += asteroids[i].vx;
-                asteroids[i].y += asteroids[i].vy;
-                asteroids[i].angle += asteroids[i].rotation;
-                wrap(asteroids[i]);
-                if (game.invulnerable === 0 && checkCollision(ship.x, ship.y, ship.radius, asteroids[i].x, asteroids[i].y, asteroids[i].size)) {
+                const asteroid = asteroids[i];
+                asteroid.x += asteroid.vx;
+                asteroid.y += asteroid.vy;
+                asteroid.angle += asteroid.rotation;
+                wrap(asteroid);
+
+                // Ship -> Asteroid Collision
+                if (game.invulnerable <= 0 && checkCollision(ship.x, ship.y, ship.radius * 0.7, asteroid.x, asteroid.y, asteroid.size)) {
                     handlePlayerDeath();
-                    asteroids.splice(i, 1);
-                    continue;
+                }
+            }
+            
+            // Ship -> Saucer Collision
+            for (let i = saucers.length - 1; i >= 0; i--) {
+                const saucer = saucers[i];
+                 if (game.invulnerable <= 0 && checkCollision(ship.x, ship.y, ship.radius * 0.7, saucer.x, saucer.y, saucer.radius)) {
+                    handlePlayerDeath();
                 }
             }
 
-            for (let i = enemyBullets.length - 1; i >= 0; i--) {
-                if (game.invulnerable === 0 && checkCollision(ship.x, ship.y, ship.radius, enemyBullets[i].x, enemyBullets[i].y, enemyBullets[i].radius)) {
-                    handlePlayerDeath();
-                    enemyBullets.splice(i, 1);
-                    continue;
-                }
-            }
-
+            // Update particles
             for (let i = particles.length - 1; i >= 0; i--) {
                 particles[i].x += particles[i].vx;
                 particles[i].y += particles[i].vy;
                 particles[i].life--;
-                wrap(particles[i]);
                 if (particles[i].life <= 0) {
                     particles.splice(i, 1);
                 }
             }
-
+            
+            // Check for next level
             if (asteroids.length === 0) {
                 game.level++;
                 initLevel();
             }
 
+            // Update UI
             document.getElementById('score').textContent = game.score;
             document.getElementById('lives').textContent = game.lives;
         }
 
-        function render() {
+        // Draw game
+        function draw() {
+            // Black background for canvas (clears frame)
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+
             drawStars();
-            drawShip();
-            asteroids.forEach(drawAsteroid);
-            bullets.forEach(drawBullet);
-            enemyBullets.forEach(drawEnemyBullet);
-            saucers.forEach(drawSaucer);
+
+            // Draw game elements only if not game over
+            if (!game.gameOver) {
+                asteroids.forEach(drawAsteroid);
+                saucers.forEach(drawSaucer);
+                bullets.forEach(drawBullet);
+                enemyBullets.forEach(drawEnemyBullet);
+                drawShip();
+            }
+
             particles.forEach(drawParticle);
+
+            // Draw Invulnerability Shield (optional visual feedback)
+            if (game.invulnerable > 0) {
+                ctx.save();
+                ctx.translate(ship.x, ship.y);
+                ctx.strokeStyle = `rgba(0, 255, 255, ${game.invulnerable / 90})`; // Fades out
+                ctx.shadowColor = '#00FFFF';
+                ctx.shadowBlur = 15;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(0, 0, ship.radius + 5, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.restore();
+            }
         }
 
-        function gameLoop() {
+        // Main game loop
+        function loop() {
             update();
-            render();
-            requestAnimationFrame(gameLoop);
+            draw();
+            requestAnimationFrame(loop);
         }
 
-        initStars();
-        initLevel();
-        gameLoop();
+        // Initialize and Start Game Loop
+        function initGame() {
+            initStars();
+            initLevel();
+        }
+
+        initGame();
+        loop();
+        // ... (END PASTE OF ORIGINAL GAME LOGIC) ...
     </script>
 </body>
 </html>
